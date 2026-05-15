@@ -4,7 +4,7 @@ CLIcker is a PTY-based touch layer for terminal AI coding agents.
 
 It wraps tools such as Claude Code, Codex CLI, Gemini CLI, Cursor CLI, GitHub Copilot CLI, OpenCode, Aider, Cline, Devin, Hermes, Goose, Qwen Code, and Grok CLI without replacing them.
 
-CLIcker does not copy each agent's commands or personality. It keeps the original CLI running in a real PTY and adds a small mouse/touch control pad for common terminal keys, focus changes, text sending, viewport clearing, and wrapper quit.
+CLIcker does not copy each agent's commands or personality. It keeps the original CLI running in a real PTY, renders it with a terminal emulator, and lets mouse events pass through when the wrapped CLI enables terminal mouse mode. A small fallback pad remains for common keys, focus changes, text sending, viewport clearing, and wrapper quit.
 
 ```bash
 npm install

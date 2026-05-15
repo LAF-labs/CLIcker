@@ -21,14 +21,14 @@ interface TouchAction {
 interface TouchContext {
   screen: blessed.Widgets.Screen;
   sidebar: blessed.Widgets.ListElement;
-  terminal: blessed.Widgets.BoxElement;
+  terminal: blessed.Widgets.TerminalElement;
   input: blessed.Widgets.TextboxElement;
   footer: blessed.Widgets.BoxElement;
   session: PtySession;
   quit(): void;
 }
 
-const sidebarWidth = 28;
+const sidebarWidth = 24;
 const headerHeight = 3;
 const inputHeight = 3;
 const footerHeight = 1;
@@ -38,11 +38,11 @@ const enter = "\r";
 const touchActions: TouchAction[] = [
   {
     id: "focus-terminal",
-    label: "Focus terminal",
-    description: "Return keyboard focus to the wrapped CLI.",
+    label: "Direct CLI",
+    description: "Focus the original CLI viewport. Clicks pass through when that CLI enables mouse mode.",
     run: ({terminal, footer, screen}) => {
       terminal.focus();
-      footer.setContent(" Terminal focused  |  Keyboard goes directly to the CLI ");
+      footer.setContent(" Original CLI focused  |  Keyboard and supported mouse input go to the CLI ");
       screen.render();
     },
   },
@@ -166,7 +166,7 @@ export function runTui(options: RunTuiOptions): void {
 
   const sidebar = blessed.list({
     parent: screen,
-    label: " Touch ",
+    label: " Fallback ",
     top: headerHeight,
     left: 0,
     width: sidebarWidth,
@@ -196,7 +196,7 @@ export function runTui(options: RunTuiOptions): void {
 
   const details = blessed.box({
     parent: screen,
-    label: " Button ",
+    label: " Status ",
     left: 0,
     width: sidebarWidth,
     bottom: inputHeight + footerHeight,
@@ -214,7 +214,7 @@ export function runTui(options: RunTuiOptions): void {
     },
   });
 
-  const terminal = blessed.box({
+  const terminal = blessed.terminal({
     parent: screen,
     label: ` ${options.binary} `,
     top: headerHeight,
@@ -222,21 +222,15 @@ export function runTui(options: RunTuiOptions): void {
     right: 0,
     bottom: inputHeight + footerHeight,
     border: "line",
-    tags: false,
-    scrollable: true,
-    alwaysScroll: true,
+    handler(data: Buffer | string): void {
+      session?.write(Buffer.isBuffer(data) ? data.toString("utf8") : data);
+    },
+    cursor: "block",
+    screenKeys: false,
+    terminal: process.env.TERM ?? "xterm-256color",
     mouse: true,
     keys: true,
     vi: true,
-    scrollbar: {
-      ch: " ",
-      track: {
-        bg: "gray",
-      },
-      style: {
-        bg: "white",
-      },
-    },
     style: {
       border: {
         fg: "green",
@@ -278,7 +272,7 @@ export function runTui(options: RunTuiOptions): void {
     left: 0,
     height: footerHeight,
     width: "100%",
-    content: " Thin touch layer  |  Click buttons or type directly  |  Ctrl+Q quits CLIcker ",
+    content: " Click inside the CLI first  |  Fallback keys are on the left  |  Ctrl+Q quits CLIcker ",
     style: {
       fg: "black",
       bg: "white",
@@ -310,13 +304,12 @@ export function runTui(options: RunTuiOptions): void {
   };
 
   session.process.onData(data => {
-    terminal.pushLine(data);
-    terminal.setScrollPerc(100);
+    terminal.write(data);
     screen.render();
   });
 
   session.process.onExit(({exitCode}) => {
-    terminal.pushLine(`\n[CLIcker] ${options.binary} exited with code ${exitCode}`);
+    terminal.write(`\r\n[CLIcker] ${options.binary} exited with code ${exitCode}\r\n`);
     footer.setContent(` ${options.binary} exited with code ${exitCode}  |  Ctrl+Q quits CLIcker `);
     screen.render();
   });
@@ -341,16 +334,34 @@ export function runTui(options: RunTuiOptions): void {
     }
   });
 
-  terminal.on("click", () => {
+  terminal.on("mousedown", () => {
     terminal.focus();
+    footer.setContent(
+      terminalHasMouseTracking(terminal)
+        ? " Mouse click passed through to wrapped CLI "
+        : " CLI viewport focused  |  This CLI has not enabled terminal mouse tracking yet ",
+    );
     screen.render();
   });
 
-  terminal.on("keypress", (ch, key) => {
-    const sequence = key?.sequence ?? ch;
-    if (typeof sequence === "string" && sequence.length > 0) {
-      session.write(sequence);
+  terminal.on("wheelup", () => {
+    if (terminalHasMouseTracking(terminal)) {
+      return;
     }
+
+    terminal.scroll(-3);
+    footer.setContent(" Scrolled CLIcker viewport  |  Wrapped CLI mouse mode is not active ");
+    screen.render();
+  });
+
+  terminal.on("wheeldown", () => {
+    if (terminalHasMouseTracking(terminal)) {
+      return;
+    }
+
+    terminal.scroll(3);
+    footer.setContent(" Scrolled CLIcker viewport  |  Wrapped CLI mouse mode is not active ");
+    screen.render();
   });
 
   input.on("submit", value => {
@@ -385,6 +396,7 @@ export function runTui(options: RunTuiOptions): void {
 
   screen.on("resize", () => {
     session.resize(getPtyCols(screen.width as number), getPtyRows(screen.height as number));
+    terminal.term.resize(getPtyCols(screen.width as number), getPtyRows(screen.height as number));
     header.setContent(buildHeader(options));
     screen.render();
   });
@@ -406,12 +418,25 @@ function buildHeader(options: RunTuiOptions): string {
 
   return [
     `{cyan-fg}{bold}CLIcker{/bold}{/cyan-fg}  ${options.adapter.label}  {yellow-fg}${options.adapter.priority}{/yellow-fg}  ${options.adapter.level}`,
-    `{gray-fg}${options.binary}${argText}  |  cwd: ${cwdName}  |  touch controls only{/gray-fg}`,
+    `{gray-fg}${options.binary}${argText}  |  cwd: ${cwdName}  |  direct CLI clicks first{/gray-fg}`,
   ].join("\n");
 }
 
 function buildActionDetails(action: TouchAction): string {
   return [`${action.label}`, "", action.description].join("\n");
+}
+
+function terminalHasMouseTracking(terminal: blessed.Widgets.TerminalElement): boolean {
+  const term = terminal.term;
+  return Boolean(
+    term.x10Mouse
+      || term.vt200Mouse
+      || term.normalMouse
+      || term.mouseEvents
+      || term.utfMouse
+      || term.sgrMouse
+      || term.urxvtMouse,
+  );
 }
 
 function getPtyCols(screenWidth: number): number {

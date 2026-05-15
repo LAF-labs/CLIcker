@@ -29,7 +29,8 @@
     "blessed": "^0.1.81",
     "commander": "^14.0.3",
     "conf": "^15.1.0",
-    "node-pty": "^1.1.0"
+    "node-pty": "^1.1.0",
+    "term.js": "^0.0.7"
   },
   "devDependencies": {
     "@types/blessed": "^0.1.25",
