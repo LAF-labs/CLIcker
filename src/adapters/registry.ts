@@ -3,7 +3,7 @@ import type {AgentAdapter, ResolvedAdapter} from "./types.js";
 function adapter(input: Omit<AgentAdapter, "level"> & {level?: AgentAdapter["level"]}): AgentAdapter {
   return {
     ...input,
-    level: input.level ?? "L1_SHELL",
+    level: input.level ?? "L1_CLICK",
   };
 }
 

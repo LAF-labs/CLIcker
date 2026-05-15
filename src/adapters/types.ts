@@ -1,4 +1,4 @@
-export type AdapterLevel = "L0_DETECT" | "L1_SHELL";
+export type AdapterLevel = "L0_DETECT" | "L1_CLICK";
 
 export interface AgentAdapter {
   id: string;
