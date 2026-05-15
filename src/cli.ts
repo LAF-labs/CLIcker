@@ -43,24 +43,28 @@ program
     console.log(JSON.stringify(config.store, null, 2));
   });
 
-program
-  .argument("[target]", "Agent command to wrap")
-  .argument("[args...]", "Arguments passed to the target agent")
-  .action((target: string | undefined, args: string[]) => {
-    const selectedTarget = target ?? config.get("defaultTarget");
+const passthroughCommands = new Set(["adapters", "setup", "config", "--help", "-h", "--version", "-V"]);
+const target = process.argv[2];
 
-    if (!selectedTarget) {
-      program.help();
-      return;
-    }
+if (!target) {
+  const defaultTarget = config.get("defaultTarget");
+  if (defaultTarget) {
+    runTarget(defaultTarget, []);
+  } else {
+    program.help();
+  }
+} else if (passthroughCommands.has(target)) {
+  program.parse(process.argv);
+} else {
+  runTarget(target, process.argv.slice(3));
+}
 
-    const resolved = resolveAdapter(selectedTarget);
-    runTui({
-      adapter: resolved.adapter,
-      binary: resolved.binary,
-      args,
-      cwd: process.cwd(),
-    });
+function runTarget(targetCommand: string, args: string[]): void {
+  const resolved = resolveAdapter(targetCommand);
+  runTui({
+    adapter: resolved.adapter,
+    binary: resolved.binary,
+    args,
+    cwd: process.cwd(),
   });
-
-program.parse(process.argv);
+}

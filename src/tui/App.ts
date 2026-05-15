@@ -1,7 +1,6 @@
 import path from "node:path";
 import blessed from "blessed";
 import type {AgentAdapter} from "../adapters/types.js";
-import type {PtySession} from "../core/ptySession.js";
 import {createPtySession} from "../core/ptySession.js";
 
 export interface RunTuiOptions {
@@ -11,128 +10,85 @@ export interface RunTuiOptions {
   cwd: string;
 }
 
-interface TouchAction {
-  id: string;
+type ShellMode = "normal" | "plan review" | "always-approve";
+type PanelName = "home" | "plan" | "plugins" | "questions" | "subagents";
+
+interface PaletteItem {
+  command: string;
   label: string;
   description: string;
-  run(context: TouchContext): void;
+  panel?: PanelName;
+  prompt?: string;
+  mode?: ShellMode;
 }
 
-interface TouchContext {
-  screen: blessed.Widgets.Screen;
-  sidebar: blessed.Widgets.ListElement;
-  terminal: blessed.Widgets.TerminalElement;
-  input: blessed.Widgets.TextboxElement;
-  footer: blessed.Widgets.BoxElement;
-  session: PtySession;
-  quit(): void;
-}
-
-const sidebarWidth = 24;
 const headerHeight = 3;
 const inputHeight = 3;
 const footerHeight = 1;
-const detailHeight = 6;
-const enter = "\r";
+const paletteHeight = 10;
 
-const touchActions: TouchAction[] = [
+const paletteItems: PaletteItem[] = [
   {
-    id: "focus-terminal",
-    label: "Direct CLI",
-    description: "Focus the original CLI viewport. Clicks pass through when that CLI enables mouse mode.",
-    run: ({terminal, footer, screen}) => {
-      terminal.focus();
-      footer.setContent(" Original CLI focused  |  Keyboard and supported mouse input go to the CLI ");
-      screen.render();
-    },
+    command: "/plan",
+    label: "/plan",
+    description: "Open the plan viewer and ask the wrapped CLI to plan before acting.",
+    panel: "plan",
+    mode: "plan review",
+    prompt:
+      "Make a plan before editing. Break the work into clear phases, identify files to inspect, risks, and verification. Wait for approval before execution.",
   },
   {
-    id: "focus-prompt",
-    label: "Prompt box",
-    description: "Type text in CLIcker, then send it to the CLI with Enter.",
-    run: ({input, footer, screen}) => {
-      input.focus();
-      footer.setContent(" Prompt box focused  |  Enter sends text to the CLI ");
-      screen.render();
-    },
+    command: "/review",
+    label: "/review",
+    description: "Ask for a focused review of the current diff.",
+    prompt:
+      "Review the current diff for bugs, regressions, missing tests, and maintainability risks. Lead with concrete findings and file references.",
   },
   {
-    id: "enter",
-    label: "Enter",
-    description: "Send Enter to the wrapped CLI.",
-    run: context => sendKey(context, enter, "Enter"),
+    command: "/btw",
+    label: "/btw",
+    description: "Ask a side question without changing the main task framing.",
+    prompt: "Side question: ",
   },
   {
-    id: "escape",
-    label: "Escape",
-    description: "Send Escape to the wrapped CLI.",
-    run: context => sendKey(context, "\x1b", "Escape"),
+    command: "/skills",
+    label: "/skills",
+    description: "Open a Grok Build-style skills browser.",
+    panel: "plugins",
   },
   {
-    id: "tab",
-    label: "Tab",
-    description: "Send Tab to the wrapped CLI.",
-    run: context => sendKey(context, "\t", "Tab"),
+    command: "/plugins",
+    label: "/plugins",
+    description: "Browse hooks, plugins, marketplace, skills, and MCP servers.",
+    panel: "plugins",
   },
   {
-    id: "up",
-    label: "Up",
-    description: "Send the Up arrow key.",
-    run: context => sendKey(context, "\x1b[A", "Up"),
+    command: "/questions",
+    label: "/questions",
+    description: "Show a multiple-choice clarification panel.",
+    panel: "questions",
   },
   {
-    id: "down",
-    label: "Down",
-    description: "Send the Down arrow key.",
-    run: context => sendKey(context, "\x1b[B", "Down"),
+    command: "/subagents",
+    label: "/subagents",
+    description: "Open the parallel subagent dashboard.",
+    panel: "subagents",
   },
   {
-    id: "left",
-    label: "Left",
-    description: "Send the Left arrow key.",
-    run: context => sendKey(context, "\x1b[D", "Left"),
+    command: "/approve",
+    label: "/approve",
+    description: "Switch wrapper status to always-approve display mode.",
+    mode: "always-approve",
   },
   {
-    id: "right",
-    label: "Right",
-    description: "Send the Right arrow key.",
-    run: context => sendKey(context, "\x1b[C", "Right"),
+    command: "/clear",
+    label: "/clear",
+    description: "Clear the visible transcript while keeping the wrapped CLI running.",
   },
   {
-    id: "ctrl-c",
-    label: "Ctrl+C",
-    description: "Interrupt the wrapped CLI without closing CLIcker.",
-    run: context => sendKey(context, "\x03", "Ctrl+C"),
-  },
-  {
-    id: "ctrl-d",
-    label: "Ctrl+D",
-    description: "Send EOF to the wrapped CLI.",
-    run: context => sendKey(context, "\x04", "Ctrl+D"),
-  },
-  {
-    id: "ctrl-l",
-    label: "Ctrl+L",
-    description: "Ask the wrapped CLI to clear or redraw its own screen.",
-    run: context => sendKey(context, "\x0c", "Ctrl+L"),
-  },
-  {
-    id: "clear-view",
-    label: "Clear view",
-    description: "Clear only CLIcker's viewport. The wrapped CLI keeps running.",
-    run: ({terminal, footer, screen}) => {
-      terminal.setContent("");
-      footer.setContent(" View cleared  |  Wrapped CLI is still running ");
-      screen.render();
-    },
-  },
-  {
-    id: "quit",
-    label: "Quit wrapper",
-    description: "Close CLIcker and terminate the wrapped CLI process.",
-    run: ({quit}) => {
-      quit();
-    },
+    command: "/quit",
+    label: "/quit",
+    description: "Quit CLIcker and terminate the wrapped process.",
   },
 ];
 
@@ -144,7 +100,11 @@ export function runTui(options: RunTuiOptions): void {
     mouse: true,
   });
 
-  let selectedAction = touchActions[0];
+  let mode: ShellMode = "normal";
+  let activePanel: PanelName | null = null;
+  let turnCount = 0;
+  let outputChars = 0;
+  let visiblePaletteItems: PaletteItem[] = [];
 
   const header = blessed.box({
     parent: screen,
@@ -157,71 +117,18 @@ export function runTui(options: RunTuiOptions): void {
       left: 1,
       right: 1,
     },
-    content: buildHeader(options),
     style: {
       fg: "white",
       bg: "black",
     },
   });
 
-  const sidebar = blessed.list({
-    parent: screen,
-    label: " Fallback ",
-    top: headerHeight,
-    left: 0,
-    width: sidebarWidth,
-    bottom: inputHeight + footerHeight + detailHeight,
-    border: "line",
-    mouse: true,
-    keys: true,
-    vi: false,
-    items: touchActions.map(action => action.label),
-    style: {
-      border: {
-        fg: "cyan",
-      },
-      selected: {
-        bg: "cyan",
-        fg: "black",
-        bold: true,
-      },
-      item: {
-        hover: {
-          bg: "gray",
-          fg: "black",
-        },
-      },
-    },
-  });
-
-  const details = blessed.box({
-    parent: screen,
-    label: " Status ",
-    left: 0,
-    width: sidebarWidth,
-    bottom: inputHeight + footerHeight,
-    height: detailHeight,
-    border: "line",
-    padding: {
-      left: 1,
-      right: 1,
-    },
-    content: buildActionDetails(selectedAction),
-    style: {
-      border: {
-        fg: "yellow",
-      },
-    },
-  });
-
   const terminal = blessed.terminal({
     parent: screen,
-    label: ` ${options.binary} `,
     top: headerHeight,
-    left: sidebarWidth,
+    left: 0,
     right: 0,
     bottom: inputHeight + footerHeight,
-    border: "line",
     handler(data: Buffer | string): void {
       session?.write(Buffer.isBuffer(data) ? data.toString("utf8") : data);
     },
@@ -232,35 +139,77 @@ export function runTui(options: RunTuiOptions): void {
     keys: true,
     vi: true,
     style: {
+      bg: "black",
+      fg: "white",
+    },
+  });
+
+  const palette = blessed.list({
+    parent: screen,
+    label: " command palette ",
+    bottom: inputHeight + footerHeight,
+    left: 2,
+    right: 2,
+    height: paletteHeight,
+    hidden: true,
+    border: "line",
+    mouse: true,
+    keys: true,
+    tags: true,
+    items: [],
+    style: {
       border: {
-        fg: "green",
+        fg: "gray",
       },
-      focus: {
-        border: {
-          fg: "cyan",
-        },
+      selected: {
+        bg: "gray",
+        fg: "white",
+        bold: true,
+      },
+    },
+  });
+
+  const panel = blessed.box({
+    parent: screen,
+    top: "center",
+    left: "center",
+    width: "72%",
+    height: "56%",
+    hidden: true,
+    border: "line",
+    tags: true,
+    padding: {
+      left: 2,
+      right: 2,
+      top: 1,
+      bottom: 1,
+    },
+    style: {
+      fg: "white",
+      bg: "black",
+      border: {
+        fg: "gray",
       },
     },
   });
 
   const input = blessed.textbox({
     parent: screen,
-    label: " Send Text ",
     bottom: footerHeight,
-    left: 0,
+    left: 1,
+    right: 1,
     height: inputHeight,
-    width: "100%",
     border: "line",
     inputOnFocus: true,
     mouse: true,
     keys: true,
     style: {
       border: {
-        fg: "white",
+        fg: "gray",
       },
       focus: {
         border: {
-          fg: "green",
+          fg: "white",
         },
       },
     },
@@ -270,12 +219,12 @@ export function runTui(options: RunTuiOptions): void {
     parent: screen,
     bottom: 0,
     left: 0,
-    height: footerHeight,
     width: "100%",
-    content: " Click inside the CLI first  |  Fallback keys are on the left  |  Ctrl+Q quits CLIcker ",
+    height: footerHeight,
+    tags: true,
     style: {
-      fg: "black",
-      bg: "white",
+      fg: "gray",
+      bg: "black",
     },
   });
 
@@ -293,156 +242,311 @@ export function runTui(options: RunTuiOptions): void {
     process.exit(0);
   };
 
-  const context: TouchContext = {
-    screen,
-    sidebar,
-    terminal,
-    input,
-    footer,
-    session,
-    quit,
+  const refreshChrome = (): void => {
+    header.setContent(buildHeader(options, mode, turnCount, outputChars));
+    input.setLabel(buildInputLabel(options, mode));
+    footer.setContent(buildFooter(activePanel));
+  };
+
+  const openPanel = (name: PanelName): void => {
+    activePanel = name;
+    palette.hide();
+    panel.setLabel(` ${name} `);
+    panel.setContent(buildPanelContent(name, options, mode));
+    panel.show();
+    refreshChrome();
+    screen.render();
+  };
+
+  const closePanel = (): void => {
+    activePanel = null;
+    panel.hide();
+    palette.hide();
+    input.focus();
+    refreshChrome();
+    screen.render();
+  };
+
+  const showPalette = (): void => {
+    const value = input.getValue();
+    const query = value.startsWith("/") ? value.slice(1).toLowerCase() : "";
+    visiblePaletteItems = paletteItems.filter(item =>
+      query.length === 0
+        ? true
+        : item.command.slice(1).includes(query) || item.description.toLowerCase().includes(query),
+    );
+
+    palette.setItems(
+      visiblePaletteItems.map(
+        item =>
+          `{bold}${item.label.padEnd(14)}{/bold} ${item.description}`,
+      ),
+    );
+    palette.show();
+    palette.select(0);
+    refreshChrome();
+    screen.render();
+  };
+
+  const hidePalette = (): void => {
+    palette.hide();
+    refreshChrome();
+    screen.render();
+  };
+
+  const applyPaletteItem = (item: PaletteItem): void => {
+    if (item.command === "/quit") {
+      quit();
+      return;
+    }
+
+    if (item.command === "/clear") {
+      terminal.write("\x1b[2J\x1b[H");
+      hidePalette();
+      input.clearValue();
+      input.focus();
+      return;
+    }
+
+    if (item.mode) {
+      mode = item.mode;
+    }
+
+    if (item.panel) {
+      openPanel(item.panel);
+    }
+
+    if (item.prompt) {
+      input.setValue(item.prompt);
+      input.focus();
+    }
+
+    hidePalette();
+    refreshChrome();
+    screen.render();
+  };
+
+  const sendPrompt = (value: string): void => {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      return;
+    }
+
+    const matchingCommand = paletteItems.find(item => item.command === trimmed);
+    if (matchingCommand) {
+      applyPaletteItem(matchingCommand);
+      return;
+    }
+
+    if (trimmed.startsWith("/")) {
+      const command = paletteItems.find(item => trimmed.startsWith(`${item.command} `));
+      if (command?.prompt) {
+        session.write(`${command.prompt}${trimmed.slice(command.command.length).trim()}\r`);
+        turnCount += 1;
+        return;
+      }
+    }
+
+    session.write(`${value}\r`);
+    turnCount += 1;
   };
 
   session.process.onData(data => {
+    outputChars += data.length;
     terminal.write(data);
+    refreshChrome();
     screen.render();
   });
 
   session.process.onExit(({exitCode}) => {
     terminal.write(`\r\n[CLIcker] ${options.binary} exited with code ${exitCode}\r\n`);
-    footer.setContent(` ${options.binary} exited with code ${exitCode}  |  Ctrl+Q quits CLIcker `);
+    refreshChrome();
+    footer.setContent(` ${options.binary} exited with code ${exitCode} | ^-q quit `);
     screen.render();
   });
 
-  sidebar.on("select", (_item, index) => {
-    const action = touchActions[index];
-    if (!action) {
-      return;
-    }
-
-    selectedAction = action;
-    details.setContent(buildActionDetails(action));
-    action.run(context);
+  input.on("submit", value => {
+    sendPrompt(value);
+    input.clearValue();
+    hidePalette();
+    input.focus();
+    refreshChrome();
+    screen.render();
   });
 
-  sidebar.on("select item", (_item, index) => {
-    const action = touchActions[index];
-    if (action) {
-      selectedAction = action;
-      details.setContent(buildActionDetails(action));
-      screen.render();
+  input.on("keypress", () => {
+    setTimeout(() => {
+      const value = input.getValue();
+      if (value.startsWith("/")) {
+        showPalette();
+      } else if (!palette.hidden) {
+        hidePalette();
+      }
+    }, 0);
+  });
+
+  palette.on("select", (_item, index) => {
+    const item = visiblePaletteItems[index];
+    if (item) {
+      applyPaletteItem(item);
     }
   });
 
   terminal.on("mousedown", () => {
     terminal.focus();
-    footer.setContent(
-      terminalHasMouseTracking(terminal)
-        ? " Mouse click passed through to wrapped CLI "
-        : " CLI viewport focused  |  This CLI has not enabled terminal mouse tracking yet ",
-    );
+    refreshChrome();
     screen.render();
-  });
-
-  terminal.on("wheelup", () => {
-    if (terminalHasMouseTracking(terminal)) {
-      return;
-    }
-
-    terminal.scroll(-3);
-    footer.setContent(" Scrolled CLIcker viewport  |  Wrapped CLI mouse mode is not active ");
-    screen.render();
-  });
-
-  terminal.on("wheeldown", () => {
-    if (terminalHasMouseTracking(terminal)) {
-      return;
-    }
-
-    terminal.scroll(3);
-    footer.setContent(" Scrolled CLIcker viewport  |  Wrapped CLI mouse mode is not active ");
-    screen.render();
-  });
-
-  input.on("submit", value => {
-    if (value.length > 0) {
-      session.write(`${value}${enter}`);
-      footer.setContent(" Text sent to wrapped CLI ");
-    }
-
-    input.clearValue();
-    terminal.focus();
-    screen.render();
-  });
-
-  screen.key(["C-c"], () => {
-    sendKey(context, "\x03", "Ctrl+C");
   });
 
   screen.key(["C-q"], () => {
     quit();
   });
 
+  for (const element of [terminal, input, palette, panel]) {
+    element.key(["C-q"], () => {
+      quit();
+    });
+  }
+
+  screen.key(["C-c"], () => {
+    session.write("\x03");
+    refreshChrome();
+    screen.render();
+  });
+
+  screen.key(["escape"], () => {
+    if (activePanel || !palette.hidden) {
+      closePanel();
+      return;
+    }
+
+    input.clearValue();
+    input.focus();
+    refreshChrome();
+    screen.render();
+  });
+
   screen.key(["tab"], () => {
-    if (screen.focused === terminal) {
-      sidebar.focus();
-    } else if (screen.focused === sidebar) {
-      input.focus();
+    if (palette.hidden) {
+      showPalette();
+      palette.focus();
     } else {
-      terminal.focus();
+      palette.down(1);
     }
     screen.render();
+  });
+
+  screen.key(["S-tab"], () => {
+    mode = mode === "normal" ? "plan review" : "normal";
+    refreshChrome();
+    screen.render();
+  });
+
+  screen.key(["C-h"], () => {
+    openPanel("home");
   });
 
   screen.on("resize", () => {
     session.resize(getPtyCols(screen.width as number), getPtyRows(screen.height as number));
     terminal.term.resize(getPtyCols(screen.width as number), getPtyRows(screen.height as number));
-    header.setContent(buildHeader(options));
+    refreshChrome();
     screen.render();
   });
 
-  terminal.focus();
+  refreshChrome();
+  input.focus();
   screen.render();
 }
 
-function sendKey(context: TouchContext, sequence: string, label: string): void {
-  context.session.write(sequence);
-  context.footer.setContent(` Sent ${label} to wrapped CLI `);
-  context.terminal.focus();
-  context.screen.render();
-}
-
-function buildHeader(options: RunTuiOptions): string {
+function buildHeader(options: RunTuiOptions, mode: ShellMode, turns: number, outputChars: number): string {
   const cwdName = path.basename(options.cwd);
-  const argText = options.args.length > 0 ? ` ${options.args.join(" ")}` : "";
+  const progress = Math.min(99.9, outputChars / 800).toFixed(2);
+  const target = [options.binary, ...options.args].join(" ");
 
   return [
-    `{cyan-fg}{bold}CLIcker{/bold}{/cyan-fg}  ${options.adapter.label}  {yellow-fg}${options.adapter.priority}{/yellow-fg}  ${options.adapter.level}`,
-    `{gray-fg}${options.binary}${argText}  |  cwd: ${cwdName}  |  direct CLI clicks first{/gray-fg}`,
+    `{gray-fg}${cwdName}/main  ${target}{/gray-fg}{|}{blue-fg}${turns} ↵{/blue-fg}  ${progress}%│`,
+    "",
+    `{bold}›{/bold} {white-fg}${options.adapter.label}{/white-fg}    {gray-fg}CLIcker · grok-build-style · ${mode}{/gray-fg}`,
   ].join("\n");
 }
 
-function buildActionDetails(action: TouchAction): string {
-  return [`${action.label}`, "", action.description].join("\n");
+function buildInputLabel(options: RunTuiOptions, mode: ShellMode): string {
+  return ` ›  ${options.adapter.id} · ${mode} `;
 }
 
-function terminalHasMouseTracking(terminal: blessed.Widgets.TerminalElement): boolean {
-  const term = terminal.term;
-  return Boolean(
-    term.x10Mouse
-      || term.vt200Mouse
-      || term.normalMouse
-      || term.mouseEvents
-      || term.utfMouse
-      || term.sgrMouse
-      || term.urxvtMouse,
-  );
+function buildFooter(activePanel: PanelName | null): string {
+  if (activePanel) {
+    return " Esc close | Tab command palette | Ctrl+H home | ^-q quit ";
+  }
+
+  return " Enter send | Shift-Tab normal/plan | Tab commands | Ctrl+H home | ^-q quit ";
+}
+
+function buildPanelContent(name: PanelName, options: RunTuiOptions, mode: ShellMode): string {
+  switch (name) {
+    case "home":
+      return [
+        "{bold}CLIcker Home{/bold}",
+        "",
+        `Wrapped CLI: ${options.adapter.label}`,
+        `Mode: ${mode}`,
+        "",
+        "Type / to open commands. Use /plan, /plugins, /questions, or /subagents.",
+        "The wrapped CLI still runs unchanged behind this Grok Build-style shell.",
+      ].join("\n");
+    case "plan":
+      return [
+        "{bold}{yellow-fg}plan.md{/yellow-fg}{/bold}",
+        "",
+        "1 Design the change as a reviewable plan",
+        "2 Inspect repository conventions before editing",
+        "3 List files, risks, and verification commands",
+        "4 Ask the wrapped CLI to execute only after approval",
+        "",
+        "{gray-fg}Enter comment | j/k nav | V select | Ctrl+Enter finalize | Esc close{/gray-fg}",
+      ].join("\n");
+    case "plugins":
+      return [
+        "{bold}Hooks   Plugins   Marketplace   Skills   MCP Servers{/bold}",
+        "",
+        "› browser-review        (community)",
+        "› code-review           (local)",
+        "› make-interfaces-feel-better  (user)",
+        "› project-conventions   (local)",
+        "› pr-summary            (local)",
+        "",
+        "{gray-fg}/ search | Space expand | Tab tab | Esc close{/gray-fg}",
+      ].join("\n");
+    case "questions":
+      return [
+        "{bold}Waiting on answers for 3 questions{/bold}",
+        "",
+        "What interaction should CLIcker prioritize?",
+        "1 (○) Grok Build-style shell",
+        "2 (○) Thin terminal passthrough",
+        "3 (○) Hybrid with custom commands",
+        "z (○) Type your answer here",
+        "",
+        "{gray-fg}[1/3] ↑/↓ navigate · ←/→ question · Enter select{/gray-fg}",
+      ].join("\n");
+    case "subagents":
+      return [
+        "{bold}{magenta-fg}4 agents ↳{/magenta-fg}{/bold}",
+        "",
+        "· general   Review CLI wrapper architecture",
+        "· explore   Inspect wrapped CLI capabilities",
+        "· explore   Map command palette opportunities",
+        "· general   Verify terminal rendering",
+        "",
+        "Subagents are represented in the shell UI first; execution can be backed by the wrapped CLI later.",
+      ].join("\n");
+  }
 }
 
 function getPtyCols(screenWidth: number): number {
-  return Math.max(20, screenWidth - sidebarWidth - 2);
+  return Math.max(20, screenWidth);
 }
 
 function getPtyRows(screenHeight: number): number {
-  return Math.max(10, screenHeight - headerHeight - inputHeight - footerHeight - 2);
+  return Math.max(10, screenHeight - headerHeight - inputHeight - footerHeight);
 }
