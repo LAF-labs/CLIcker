@@ -1,0 +1,42 @@
+{
+  "name": "cliccker",
+  "version": "0.1.0",
+  "description": "PTY-based clickable control surface for terminal AI coding agents.",
+  "type": "module",
+  "bin": {
+    "clicker": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/cli.js"
+  },
+  "keywords": [
+    "ai",
+    "cli",
+    "tui",
+    "pty",
+    "coding-agent",
+    "claude",
+    "codex",
+    "gemini"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "blessed": "^0.1.81",
+    "commander": "^14.0.3",
+    "conf": "^15.1.0",
+    "node-pty": "^1.1.0"
+  },
+  "devDependencies": {
+    "@types/blessed": "^0.1.25",
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
