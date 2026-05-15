@@ -1,79 +1,68 @@
-# CLIcker Development Specification v1.1
+# CLIcker Development Specification
 
 ## 1. Product Summary
 
 **Project name:** CLIcker
 
-**One-line description:** CLIcker is a universal PTY-based wrapper that turns terminal-native AI coding agents into a clickable control surface with agent-specific adapters.
+**One-line description:** CLIcker is a universal PTY wrapper that adds a convenient mouse/touch control pad to terminal-native AI coding agents.
 
-**Primary goal:** Let developers keep typing their existing commands such as `claude`, `codex`, `gemini`, `opencode`, `aider`, or `hermes`, while CLIcker runs the original agent inside a PTY and adds a clickable sidebar, common task buttons, mode controls, and session utilities.
+**Primary goal:** Let developers keep using their existing commands such as `claude`, `codex`, `gemini`, `opencode`, `aider`, `hermes`, or `grok` exactly as those tools intend, while CLIcker provides clickable terminal controls around the original CLI.
 
-**Target users:** Developers who regularly use terminal AI coding agents including Claude Code, OpenAI Codex CLI, Gemini CLI, Cursor CLI, GitHub Copilot CLI, OpenCode, Aider, Cline CLI, Devin for Terminal, Hermes Agent, Goose, and Qwen Code.
+**Target users:** Developers who regularly use terminal AI coding agents including Claude Code, OpenAI Codex CLI, Gemini CLI, Cursor CLI, GitHub Copilot CLI, OpenCode, Aider, Cline CLI, Devin for Terminal, Hermes Agent, Goose, Qwen Code, and Grok CLI.
 
 ## 2. Product Principle
 
-CLIcker does not rewrite upstream agents. It wraps them.
+CLIcker does not rewrite, imitate, or normalize upstream agents. It wraps them.
 
 The core product is:
 
 ```text
-Universal PTY wrapper + agent-specific adapter registry + clickable TUI shell
+Original CLI in a PTY + clickable terminal control pad
 ```
 
-This means every supported CLI should work at a generic terminal level first. Better clickable behavior is added progressively through adapters.
+Each agent keeps its own commands, modes, prompts, approval model, UI, and habits. CLIcker only makes terminal interaction easier to click or touch.
+
+Grok CLI is a useful reference for modern agent ergonomics: controls should be fast, visible, and remote-friendly. CLIcker applies that lesson as a thin control surface, not as a new agent workflow.
 
 ## 3. Adapter Support Scope
 
-CLIcker will support adapters through P1 in the first major implementation wave.
+Adapters are intentionally light. They identify known binaries and display a friendly name. They do not define agent-specific slash commands or prompt templates.
 
 ### P0 Adapters
 
-P0 adapters are top priority because they represent the most common modern terminal coding-agent workflows.
-
-| Agent | Command | Initial adapter goals |
+| Agent | Command | CLIcker behavior |
 | --- | --- | --- |
-| Claude Code | `claude` | Slash commands, common prompts, approval hints |
-| OpenAI Codex CLI | `codex` | Suggest/auto-edit/full-auto mode prompts, common tasks |
-| Gemini CLI | `gemini` | File mention helpers, prompt injection, generic session control |
-| Cursor CLI | `cursor-agent` | Prompt mode, resume/list helpers, rules/MCP awareness |
-| GitHub Copilot CLI | `copilot` | GitHub issue/PR task prompts, MCP-aware workflows |
-| OpenCode | `opencode` | Build/plan workflow prompts, session/share helpers |
+| Claude Code | `claude` | Launch unchanged, add touch controls |
+| OpenAI Codex CLI | `codex` | Launch unchanged, pass flags through, add touch controls |
+| Gemini CLI | `gemini` | Launch unchanged, add touch controls |
+| Cursor CLI | `cursor-agent` | Launch unchanged, add touch controls |
+| GitHub Copilot CLI | `copilot` | Launch unchanged, add touch controls |
+| OpenCode | `opencode` | Launch unchanged, add touch controls |
 
 ### P1 Adapters
 
-P1 adapters broaden coverage to the agent tools power users are adopting for local, open, or enterprise workflows.
-
-| Agent | Command | Initial adapter goals |
+| Agent | Command | CLIcker behavior |
 | --- | --- | --- |
-| Aider | `aider` | `/add`, `/model`, code/architect/ask/help prompt helpers |
-| Cline CLI | `cline` | Plan/Act mode prompts, auto-approve guidance, TUI/headless awareness |
-| Devin for Terminal | `devin` | Normal/accept-edits/bypass/plan prompt helpers, session commands |
-| Hermes Agent | `hermes` | Chat/provider/skills/memory-oriented workflows |
-| Goose | `goose` | MCP/ACP, recipe, and general-agent workflow prompts |
-| Qwen Code | `qwen` | Interactive/headless workflow prompts, Qwen-oriented tasks |
+| Aider | `aider` | Launch unchanged, add touch controls |
+| Cline CLI | `cline` | Launch unchanged, add touch controls |
+| Devin for Terminal | `devin` | Launch unchanged, add touch controls |
+| Hermes Agent | `hermes` | Launch unchanged, add touch controls |
+| Goose | `goose` | Launch unchanged, add touch controls |
+| Qwen Code | `qwen` | Launch unchanged, add touch controls |
+| Grok CLI | `grok`, `grok-dev` | Launch unchanged, add touch controls |
 
 ## 4. Adapter Maturity Levels
 
-Adapters are intentionally incremental.
-
 ```ts
-type AdapterLevel =
-  | "L0_DETECT"
-  | "L1_INJECT"
-  | "L2_COMMANDS"
-  | "L3_PARSE"
-  | "L4_PROTOCOL";
+type AdapterLevel = "L0_DETECT" | "L1_TOUCH";
 ```
 
 | Level | Meaning |
 | --- | --- |
-| L0_DETECT | Detect and launch the agent in the generic PTY wrapper |
-| L1_INJECT | Inject prompts and common task text safely |
-| L2_COMMANDS | Expose slash commands, modes, and sessions as UI actions |
-| L3_PARSE | Parse output for approval prompts, status, and completion signals |
-| L4_PROTOCOL | Use structured protocols such as ACP, JSON streams, or SDKs |
+| L0_DETECT | Launch an arbitrary target in the generic PTY wrapper |
+| L1_TOUCH | Recognize a supported CLI name and show the standard touch control pad |
 
-The v1 implementation target is L1-L2 for P0/P1 agents. L3-L4 are later hardening work.
+Future adapter levels may add user-configured buttons, but built-in adapters should stay conservative unless the user explicitly asks for agent-specific shortcuts.
 
 ## 5. Core Architecture
 
@@ -87,27 +76,22 @@ Adapter Resolver
 PTY Runtime (node-pty)
         |
         v
-Terminal Screen Buffer / ANSI Stream
+Original CLI
         |
         v
-Clickable TUI Shell
-        |
-        v
-Adapter Actions / Prompt Injection / Session Commands
+CLIcker TUI: viewport + touch pad + text sender
 ```
 
 ## 6. Technical Stack
 
-| Area | Choice | Reason |
-| --- | --- | --- |
-| Language | TypeScript | Type safety and npm ecosystem |
-| CLI parser | Commander | Simple `clicker <target> [...args]` command structure |
-| PTY runtime | node-pty | Required for real interactive terminal agents |
-| TUI | blessed / neo-blessed style architecture | More practical for mouse and terminal layout than Ink-only rendering |
-| Config | conf | Cross-platform user config storage |
-| Build | tsc | Simple npm package build |
-
-Ink can still be revisited later, but the default implementation should favor PTY-first terminal control.
+| Area | Choice |
+| --- | --- |
+| Language | TypeScript |
+| CLI parser | Commander |
+| PTY runtime | node-pty |
+| TUI | blessed |
+| Config | conf |
+| Build | tsc |
 
 ## 7. CLI Design
 
@@ -116,6 +100,7 @@ clicker <target> [...args]
 clicker claude
 clicker codex --full-auto
 clicker gemini
+clicker grok
 clicker setup
 clicker setup --remove
 clicker setup --dry-run
@@ -123,55 +108,59 @@ clicker adapters
 clicker config
 ```
 
-The branded product name is CLIcker. The binary name is `clicker`.
+Unknown options are allowed so native agent flags pass through unchanged.
 
 ## 8. TUI Layout
 
 ```text
-┌ CLIcker ─────────────────────────────────────────────────┐
-│ Agent: Claude Code   Mode: Generic   Status: Running      │
-├──────────── Sidebar ───────────┬──── PTY Viewport ────────┤
-│ New Session                    │ Real upstream CLI output  │
-│ Clear View                     │ ANSI output from PTY       │
-│ Send Common Task               │                            │
-│ ─────────────────────────────  │                            │
-│ Common Tasks                   │                            │
-│ - Fix build error              │                            │
-│ - Explain file                 │                            │
-│ - Refactor                     │                            │
-│ - Write tests                  │                            │
-│ - Review diff                  │                            │
-│ ─────────────────────────────  │                            │
-│ Agent Actions                  │                            │
-│ - Adapter-specific buttons     │                            │
-├────────────────────────────────┴───────────────────────────┤
-│ Input: prompt text sent through adapter injection            │
-└──────────────────────────────────────────────────────────────┘
++ CLIcker  Claude Code  P0  L1_TOUCH ----------------------+
+| claude --flag | cwd: project | touch controls only         |
++ Touch ----------------------+-- PTY Viewport -------------+
+| Focus terminal              | Original upstream CLI output |
+| Prompt box                  | ANSI output from PTY         |
+| Enter                       |                              |
+| Escape                      |                              |
+| Tab                         |                              |
+| Up / Down / Left / Right    |                              |
+| Ctrl+C / Ctrl+D / Ctrl+L    |                              |
+| Clear view                  |                              |
+| Quit wrapper                |                              |
++ Button ---------------------+                              |
+| Selected button details     |                              |
++-----------------------------+------------------------------+
+| Send Text: text sent to the original CLI                   |
+| Thin touch layer | Click buttons or type directly          |
++------------------------------------------------------------+
 ```
 
-## 9. Generic Behavior
+## 9. Touch Controls
 
-All targets get these behaviors:
+The built-in touch pad provides only terminal-level controls:
 
-- Launch in PTY with inherited `cwd`, `env`, terminal size, and args.
-- Render upstream output in a scrollable terminal viewport.
-- Pass keyboard input to the PTY by default.
-- Reserve wrapper keybindings for explicit CLIcker controls.
-- Provide common prompt injection actions.
-- Support mouse clicks for sidebar actions.
-
-## 10. Common Task Prompts
-
-Common tasks are text prompts injected into the running agent.
-
-| Task | Prompt intent |
+| Button | Effect |
 | --- | --- |
-| Fix build error | Ask the agent to inspect recent output and fix the failing build |
-| Explain file | Ask for an explanation of a referenced file |
-| Refactor | Ask for a safe, scoped refactor |
-| Write tests | Ask for relevant tests and verification |
-| Review diff | Ask for a code review of current git changes |
-| Generate PR description | Ask for a PR summary and test plan |
+| Focus terminal | Put keyboard focus back into the PTY viewport |
+| Prompt box | Focus the CLIcker text sender |
+| Enter | Send carriage return |
+| Escape | Send ESC |
+| Tab | Send tab |
+| Up / Down / Left / Right | Send arrow-key escape sequences |
+| Ctrl+C | Send interrupt to the wrapped CLI |
+| Ctrl+D | Send EOF to the wrapped CLI |
+| Ctrl+L | Send redraw/clear-screen control character to the wrapped CLI |
+| Clear view | Clear only CLIcker's viewport |
+| Quit wrapper | Close CLIcker and terminate the wrapped process |
+
+CLIcker should not guess which upstream command the user wants. The user remains in control of each agent's native interface.
+
+## 10. Generic Behavior
+
+- Launch the target in a PTY with inherited `cwd`, `env`, terminal size, and args.
+- Render upstream output in a scrollable terminal viewport.
+- Pass keyboard input to the PTY when the viewport is focused.
+- Let the text sender submit plain user text followed by Enter.
+- Support mouse clicks for the touch pad.
+- Avoid agent-specific prompt injection in built-in adapters.
 
 ## 11. Adapter Interface
 
@@ -180,14 +169,11 @@ export interface AgentAdapter {
   id: string;
   label: string;
   level: AdapterLevel;
+  priority: "P0" | "P1" | "P2" | "GENERIC";
   binaries: string[];
   defaultArgs?: string[];
-  actions: AdapterAction[];
-  submit: (text: string) => string;
 }
 ```
-
-The first implementation should keep adapters declarative. Output parsing and structured protocol integrations can be added later.
 
 ## 12. Alias Setup
 
@@ -199,6 +185,7 @@ Example:
 alias claude='clicker claude'
 alias codex='clicker codex'
 alias gemini='clicker gemini'
+alias grok='clicker grok'
 ```
 
 Requirements:
@@ -206,49 +193,23 @@ Requirements:
 - Use marker comments so repeated setup is idempotent.
 - Support `--dry-run`.
 - Support `--remove`.
-- Support zsh, bash, fish, and PowerShell over time.
+- Support zsh, bash, and fish.
 - Never delete unrelated user content.
 
-## 13. Roadmap
+## 13. Non-Goals
 
-### Phase 0: Foundation
+- Reimplementing upstream agent UIs.
+- Mirroring every slash command from every agent.
+- Replacing native agent documentation or workflows.
+- Guaranteeing that every upstream approval prompt can be clicked semantically.
+- Parsing every terminal screen into structured state.
 
-- Create TypeScript CLI package.
-- Add adapter registry with P0/P1 metadata.
-- Add generic PTY launch with `node-pty`.
-- Add initial blessed-based TUI layout.
+## 14. Success Criteria
 
-### Phase 1: P0 Support
-
-- Implement first-click common tasks for Claude Code, Codex, Gemini, Cursor CLI, Copilot CLI, and OpenCode.
-- Add agent-specific mode/action prompts.
-- Add shell alias setup/remove/dry-run.
-
-### Phase 2: P1 Support
-
-- Add Aider, Cline CLI, Devin, Hermes, Goose, and Qwen Code adapters.
-- Add session and slash-command helpers where safe.
-- Add adapter config overrides.
-
-### Phase 3: Hardening
-
-- Add output parsers for approvals and agent status.
-- Add structured JSON/ACP integration where available.
-- Add tests for adapter registry, alias setup, and prompt injection.
-
-## 14. Non-Goals for v1
-
-- Reimplementing the upstream agent UI.
-- Full semantic parsing of every terminal screen.
-- Guaranteeing that every upstream approval prompt can be clicked.
-- Replacing IDE-native agents such as Windsurf or Roo Code.
-
-## 15. Success Criteria
-
-CLIcker v1 is successful if:
+CLIcker is successful if:
 
 - A user can run a P0/P1 agent inside CLIcker without breaking normal keyboard usage.
-- Common task buttons reliably inject prompts.
-- Adapter-specific actions are visible and useful.
+- Native agent flags and usage pass through unchanged.
+- Common terminal controls are convenient to click or touch.
 - Alias setup is safe and reversible.
-- Unsupported agents still work through the generic PTY wrapper.
+- Unsupported commands still work through the generic PTY wrapper.

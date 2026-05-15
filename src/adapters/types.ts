@@ -1,19 +1,4 @@
-export type AdapterLevel =
-  | "L0_DETECT"
-  | "L1_INJECT"
-  | "L2_COMMANDS"
-  | "L3_PARSE"
-  | "L4_PROTOCOL";
-
-export type AdapterActionKind = "prompt" | "command";
-
-export interface AdapterAction {
-  id: string;
-  label: string;
-  description: string;
-  kind: AdapterActionKind;
-  value: string;
-}
+export type AdapterLevel = "L0_DETECT" | "L1_TOUCH";
 
 export interface AgentAdapter {
   id: string;
@@ -22,8 +7,6 @@ export interface AgentAdapter {
   priority: "P0" | "P1" | "P2" | "GENERIC";
   binaries: string[];
   defaultArgs?: string[];
-  actions: AdapterAction[];
-  submit(text: string): string;
 }
 
 export interface ResolvedAdapter {

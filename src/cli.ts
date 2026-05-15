@@ -11,14 +11,16 @@ const program = new Command();
 program
   .name("clicker")
   .description("CLIcker: clickable PTY wrapper for terminal AI coding agents")
-  .version("0.1.0");
+  .version("0.1.0")
+  .allowUnknownOption(true)
+  .allowExcessArguments(true);
 
 program
   .command("adapters")
   .description("List built-in agent adapters")
   .action(() => {
     for (const adapter of listAdapters()) {
-      console.log(`${adapter.priority}\t${adapter.id}\t${adapter.binaries.join(", ")}\t${adapter.label}`);
+      console.log(`${adapter.priority}\t${adapter.level}\t${adapter.id}\t${adapter.binaries.join(", ")}\t${adapter.label}`);
     }
   });
 
