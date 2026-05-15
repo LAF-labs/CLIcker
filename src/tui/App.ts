@@ -117,10 +117,6 @@ export function runTui(options: RunTuiOptions): void {
       left: 1,
       right: 1,
     },
-    style: {
-      fg: "white",
-      bg: "black",
-    },
   });
 
   const terminal = blessed.terminal({
@@ -138,10 +134,6 @@ export function runTui(options: RunTuiOptions): void {
     mouse: true,
     keys: true,
     vi: true,
-    style: {
-      bg: "black",
-      fg: "white",
-    },
   });
 
   const palette = blessed.list({
@@ -158,12 +150,8 @@ export function runTui(options: RunTuiOptions): void {
     tags: true,
     items: [],
     style: {
-      border: {
-        fg: "gray",
-      },
       selected: {
-        bg: "gray",
-        fg: "white",
+        inverse: true,
         bold: true,
       },
     },
@@ -184,13 +172,6 @@ export function runTui(options: RunTuiOptions): void {
       top: 1,
       bottom: 1,
     },
-    style: {
-      fg: "white",
-      bg: "black",
-      border: {
-        fg: "gray",
-      },
-    },
   });
 
   const input = blessed.textbox({
@@ -203,16 +184,6 @@ export function runTui(options: RunTuiOptions): void {
     inputOnFocus: true,
     mouse: true,
     keys: true,
-    style: {
-      border: {
-        fg: "gray",
-      },
-      focus: {
-        border: {
-          fg: "white",
-        },
-      },
-    },
   });
 
   const footer = blessed.box({
@@ -222,10 +193,6 @@ export function runTui(options: RunTuiOptions): void {
     width: "100%",
     height: footerHeight,
     tags: true,
-    style: {
-      fg: "gray",
-      bg: "black",
-    },
   });
 
   const session = createPtySession({
@@ -464,9 +431,9 @@ function buildHeader(options: RunTuiOptions, mode: ShellMode, turns: number, out
   const target = [options.binary, ...options.args].join(" ");
 
   return [
-    `{gray-fg}${cwdName}/main  ${target}{/gray-fg}{|}{blue-fg}${turns} ↵{/blue-fg}  ${progress}%│`,
+    `${cwdName}/main  ${target}{|}${turns} ↵  ${progress}%│`,
     "",
-    `{bold}›{/bold} {white-fg}${options.adapter.label}{/white-fg}    {gray-fg}CLIcker · grok-build-style · ${mode}{/gray-fg}`,
+    `{bold}›{/bold} ${options.adapter.label}    CLIcker · grok-build-style · ${mode}`,
   ].join("\n");
 }
 
@@ -496,14 +463,14 @@ function buildPanelContent(name: PanelName, options: RunTuiOptions, mode: ShellM
       ].join("\n");
     case "plan":
       return [
-        "{bold}{yellow-fg}plan.md{/yellow-fg}{/bold}",
+        "{bold}plan.md{/bold}",
         "",
         "1 Design the change as a reviewable plan",
         "2 Inspect repository conventions before editing",
         "3 List files, risks, and verification commands",
         "4 Ask the wrapped CLI to execute only after approval",
         "",
-        "{gray-fg}Enter comment | j/k nav | V select | Ctrl+Enter finalize | Esc close{/gray-fg}",
+        "Enter comment | j/k nav | V select | Ctrl+Enter finalize | Esc close",
       ].join("\n");
     case "plugins":
       return [
@@ -515,7 +482,7 @@ function buildPanelContent(name: PanelName, options: RunTuiOptions, mode: ShellM
         "› project-conventions   (local)",
         "› pr-summary            (local)",
         "",
-        "{gray-fg}/ search | Space expand | Tab tab | Esc close{/gray-fg}",
+        "/ search | Space expand | Tab tab | Esc close",
       ].join("\n");
     case "questions":
       return [
@@ -527,11 +494,11 @@ function buildPanelContent(name: PanelName, options: RunTuiOptions, mode: ShellM
         "3 (○) Hybrid with custom commands",
         "z (○) Type your answer here",
         "",
-        "{gray-fg}[1/3] ↑/↓ navigate · ←/→ question · Enter select{/gray-fg}",
+        "[1/3] ↑/↓ navigate · ←/→ question · Enter select",
       ].join("\n");
     case "subagents":
       return [
-        "{bold}{magenta-fg}4 agents ↳{/magenta-fg}{/bold}",
+        "{bold}4 agents ↳{/bold}",
         "",
         "· general   Review CLI wrapper architecture",
         "· explore   Inspect wrapped CLI capabilities",
